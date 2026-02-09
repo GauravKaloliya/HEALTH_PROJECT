@@ -171,13 +171,18 @@ def train_clinical_model_high_accuracy(X_train, y_train, X_test, y_test):
     print("\n" + "=" * 80)
     print("STEP 3: TRAINING HIGH-ACCURACY CLINICAL MODEL")
     print("=" * 80)
-    
+
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
     from xgboost import XGBClassifier
     from lightgbm import LGBMClassifier
     from catboost import CatBoostClassifier
     from sklearn.pipeline import Pipeline
-    
+    from sklearn.preprocessing import LabelEncoder
+
+    label_encoder = LabelEncoder()
+    y_train_encoded = label_encoder.fit_transform(y_train)
+    y_test_encoded = label_encoder.transform(y_test)
+
     models_to_test = {
         'RandomForest': RandomForestClassifier(n_estimators=200, max_depth=15, random_state=42),
         'XGBoost': XGBClassifier(n_estimators=200, max_depth=7, learning_rate=0.1, random_state=42, verbosity=0),
@@ -185,73 +190,76 @@ def train_clinical_model_high_accuracy(X_train, y_train, X_test, y_test):
         'CatBoost': CatBoostClassifier(iterations=200, depth=7, learning_rate=0.1, random_state=42, verbose=0),
         'GradientBoosting': GradientBoostingClassifier(n_estimators=150, max_depth=7, learning_rate=0.1, random_state=42)
     }
-    
+
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
-    
+
     best_model = None
     best_accuracy = 0
     best_name = ""
-    
+
     print("\nEvaluating individual models:")
     print("-" * 80)
-    
+
     for name, model in models_to_test.items():
-        model.fit(X_train_scaled, y_train)
+        model.fit(X_train_scaled, y_train_encoded)
         y_pred = model.predict(X_test_scaled)
-        accuracy = accuracy_score(y_test, y_pred)
+        accuracy = accuracy_score(y_test_encoded, y_pred)
         print(f"{name:20s} - Accuracy: {accuracy:.4f}")
-        
+
         if accuracy > best_accuracy:
             best_accuracy = accuracy
             best_model = model
             best_name = name
-    
+
     print(f"\n✓ Best individual model: {best_name} with accuracy {best_accuracy:.4f}")
-    
+
     if best_accuracy < 0.95:
         print("\nCreating ensemble model to boost accuracy...")
-        
+
         rf = RandomForestClassifier(n_estimators=200, max_depth=15, random_state=42)
         xgb = XGBClassifier(n_estimators=200, max_depth=7, learning_rate=0.1, random_state=42, verbosity=0)
         lgbm = LGBMClassifier(n_estimators=200, max_depth=7, learning_rate=0.1, random_state=42, verbosity=-1)
-        
+
         ensemble = VotingClassifier(
             estimators=[('rf', rf), ('xgb', xgb), ('lgbm', lgbm)],
             voting='soft'
         )
-        
-        ensemble.fit(X_train_scaled, y_train)
+
+        ensemble.fit(X_train_scaled, y_train_encoded)
         y_pred_ensemble = ensemble.predict(X_test_scaled)
-        ensemble_accuracy = accuracy_score(y_test, y_pred_ensemble)
-        
+        ensemble_accuracy = accuracy_score(y_test_encoded, y_pred_ensemble)
+
         print(f"Ensemble Model      - Accuracy: {ensemble_accuracy:.4f}")
-        
+
         if ensemble_accuracy > best_accuracy:
             best_model = ensemble
             best_accuracy = ensemble_accuracy
             best_name = "VotingEnsemble"
             print(f"✓ Ensemble model improved accuracy to {best_accuracy:.4f}")
-    
-    pipeline = Pipeline([
-        ('scaler', scaler),
-        ('classifier', best_model)
-    ])
-    
-    pipeline.fit(X_train, y_train)
-    
-    y_pred_final = pipeline.predict(X_test)
-    final_accuracy = accuracy_score(y_test, y_pred_final)
-    
+
+    if isinstance(best_model, CatBoostClassifier):
+        pipeline = best_model
+        y_pred_final = best_model.predict(X_test)
+    else:
+        pipeline = Pipeline([
+            ('scaler', scaler),
+            ('classifier', best_model)
+        ])
+        pipeline.fit(X_train, y_train_encoded)
+        y_pred_final = pipeline.predict(X_test)
+
+    final_accuracy = accuracy_score(y_test_encoded, y_pred_final)
+
     print(f"\n{'=' * 80}")
     print(f"FINAL CLINICAL MODEL: {best_name}")
     print(f"Accuracy: {final_accuracy:.4f} ({final_accuracy*100:.2f}%)")
     print(f"{'=' * 80}")
-    
+
     print("\nClassification Report:")
-    print(classification_report(y_test, y_pred_final))
-    
+    print(classification_report(y_test_encoded, y_pred_final))
+
     return pipeline, final_accuracy, best_name
 
 def prepare_image_dataset():
