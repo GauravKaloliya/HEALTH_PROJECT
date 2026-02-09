@@ -8,14 +8,6 @@ from typing import Any, Dict, Tuple
 from flask import Flask, jsonify, render_template_string, request
 from flask_cors import CORS
 
-# Import model utilities
-from model_utils import (
-    predict_risk_with_model,
-    predict_image_with_model,
-    preprocess_clinical_features,
-    mock_risk_model_from_features
-)
-
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 MAX_IMAGE_SIZE_MB = 5
 
@@ -313,6 +305,64 @@ def validate_clinical_inputs(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], D
     return cleaned, errors
 
 
+def preprocess_features(inputs: Dict[str, Any]) -> Dict[str, float]:
+    # Encode categorical variables numerically
+    gender_map = {"male": 0.5, "female": 0.5, "other": 0.5}
+    level_map = {"low": 0.0, "medium": 0.5, "high": 1.0}
+    
+    features = {
+        "age": inputs["age"] / 120,
+        "tumor_size_mm": inputs["tumor_size_mm"] / 200,
+        "bmi": inputs["bmi"] / 60,
+        "gender": gender_map.get(inputs["gender"], 0.5),
+        "family_history": 1.0 if inputs["family_history"] else 0.0,
+        "smoking_history": 1.0 if inputs["smoking_history"] else 0.0,
+        "alcohol_consumption": level_map.get(inputs["alcohol_consumption"], 0.5),
+        "diet_risk": level_map.get(inputs["diet_risk"], 0.5),
+        "physical_activity": 1.0 - level_map.get(inputs["physical_activity"], 0.5),  # Inverse: low activity = higher risk
+        "diabetes": 1.0 if inputs["diabetes"] else 0.0,
+        "inflammatory_bowel_disease": 1.0 if inputs["inflammatory_bowel_disease"] else 0.0,
+        "genetic_mutation": 1.0 if inputs["genetic_mutation"] else 0.0,
+        "screening_history": 1.0 if inputs["screening_history"] else 0.0,
+    }
+    return features
+
+
+def mock_risk_model(features: Dict[str, float]) -> Dict[str, Any]:
+    # Weighted risk calculation based on clinical factors
+    # Higher weights for more significant risk factors
+    score = (
+        features["age"] * 0.15 +
+        features["tumor_size_mm"] * 0.20 +
+        features["bmi"] * 0.08 +
+        features["family_history"] * 0.12 +
+        features["smoking_history"] * 0.10 +
+        features["alcohol_consumption"] * 0.06 +
+        features["diet_risk"] * 0.05 +
+        features["physical_activity"] * 0.05 +
+        features["diabetes"] * 0.08 +
+        features["inflammatory_bowel_disease"] * 0.04 +
+        features["genetic_mutation"] * 0.15 +
+        (1.0 - features["screening_history"]) * 0.02  # No screening = slightly higher risk
+    )
+    
+    score = min(max(score, 0.0), 1.0)
+    confidence = 0.7 + (0.3 * (1 - math.fabs(score - 0.5) * 2))
+    
+    if score >= 0.7:
+        level = "high"
+    elif score >= 0.4:
+        level = "moderate"
+    else:
+        level = "low"
+
+    return {
+        "risk_score": round(score, 3),
+        "risk_level": level,
+        "confidence": round(confidence, 3),
+    }
+
+
 def validate_image_upload(file_storage) -> str | None:
     if file_storage is None:
         return "Image file is required."
@@ -324,6 +374,24 @@ def validate_image_upload(file_storage) -> str | None:
     if size_mb > MAX_IMAGE_SIZE_MB:
         return f"File must be under {MAX_IMAGE_SIZE_MB}MB."
     return None
+
+
+def mock_image_classifier(file_storage) -> Dict[str, Any]:
+    filename = (file_storage.filename or "scan").lower()
+    if "benign" in filename:
+        label = "benign"
+        confidence = 0.88
+    elif "malignant" in filename:
+        label = "malignant"
+        confidence = 0.9
+    else:
+        label = "indeterminate"
+        confidence = 0.75
+
+    return {
+        "label": label,
+        "confidence": confidence,
+    }
 
 
 def build_error_response(errors: Dict[str, str], status_code: int = 400):
@@ -367,11 +435,8 @@ def predict_risk():
         logger.warning("Validation errors on predict-risk: %s", errors)
         return build_error_response(errors)
 
-    # Preprocess features for the model
-    features = preprocess_clinical_features(cleaned)
-    
-    # Use the trained model for prediction
-    prediction = predict_risk_with_model(features)
+    features = preprocess_features(cleaned)
+    prediction = mock_risk_model(features)
     logger.info("Risk prediction generated with score %s", prediction["risk_score"])
     return jsonify({"status": "success", "data": prediction})
 
@@ -384,8 +449,7 @@ def classify_image():
         logger.warning("Image validation error: %s", error)
         return build_error_response({"image": error})
 
-    # Use the trained model for image classification
-    classification = predict_image_with_model(file_storage)
+    classification = mock_image_classifier(file_storage)
     logger.info("Image classified as %s", classification["label"])
     return jsonify({"status": "success", "data": classification})
 

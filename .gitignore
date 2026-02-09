@@ -21,3 +21,12 @@ yarn-error.log*
 
 # OS
 .DS_Store
+
+# Data and Models
+data/
+models/
+
+# IDE
+.idea/
+.vscode/
+*.swp
