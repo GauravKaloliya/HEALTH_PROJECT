@@ -6,6 +6,7 @@ import shutil
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from typing import Tuple
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
@@ -49,7 +50,7 @@ def download_clinical_dataset():
         api = KaggleApi()
         api.authenticate()
         
-        dataset_name = "akshaydattatraykhare/cancer-dataset"
+        dataset_name = "ankushpanday2/colorectal-cancer-global-dataset-and-predictions"
         print(f"Downloading {dataset_name}...")
         api.dataset_download_files(dataset_name, path='data/clinical', unzip=True)
         print("✓ Clinical dataset downloaded successfully")
@@ -166,6 +167,199 @@ def preprocess_clinical_data(df):
     y = df['risk_level']
     return X, y
 
+
+def normalize_column_name(name: str) -> str:
+    return (
+        str(name)
+        .strip()
+        .lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+    )
+
+
+def find_best_csv(search_dir: str) -> Path | None:
+    csv_files = list(Path(search_dir).rglob('*.csv'))
+    if not csv_files:
+        return None
+    return max(csv_files, key=lambda path: path.stat().st_size)
+
+
+def coerce_boolean(series: pd.Series) -> pd.Series:
+    truthy = {"yes", "true", "1", "y", "positive", "t"}
+    falsy = {"no", "false", "0", "n", "negative", "f"}
+    if pd.api.types.is_bool_dtype(series):
+        return series.fillna(False)
+    if pd.api.types.is_numeric_dtype(series):
+        return series.fillna(0).astype(float) > 0
+    values = series.fillna("").astype(str).str.lower()
+    return values.map(lambda value: True if value in truthy else False if value in falsy else False)
+
+
+def coerce_gender(series: pd.Series) -> pd.Series:
+    values = series.fillna("unknown").astype(str).str.lower()
+    return values.map(lambda value: "male" if "male" in value else "female" if "female" in value else "other")
+
+
+def coerce_level(series: pd.Series, default: str = "medium") -> pd.Series:
+    if pd.api.types.is_numeric_dtype(series):
+        numeric = series.fillna(series.median())
+        try:
+            bins = pd.qcut(numeric, 3, labels=["low", "medium", "high"])
+            return bins.astype(str)
+        except ValueError:
+            bins = pd.cut(numeric, 3, labels=["low", "medium", "high"])
+            return bins.astype(str)
+    values = series.fillna("").astype(str).str.lower()
+    mapped = values.map(
+        lambda value: "low" if "low" in value else "medium" if "med" in value else "high" if "high" in value else default
+    )
+    return mapped
+
+
+def derive_risk_from_target(series: pd.Series) -> Tuple[pd.Series, pd.Series]:
+    if pd.api.types.is_numeric_dtype(series):
+        numeric = series.astype(float)
+        if numeric.max() <= 1:
+            risk_score = numeric.fillna(numeric.median())
+        else:
+            risk_score = (numeric - numeric.min()) / (numeric.max() - numeric.min() + 1e-9)
+        risk_level = np.where(risk_score > 0.7, "high", np.where(risk_score > 0.4, "moderate", "low"))
+        return pd.Series(risk_level), pd.Series(risk_score)
+
+    values = series.fillna("").astype(str).str.lower()
+    risk_level = values.map(
+        lambda value: "high" if any(key in value for key in ["high", "severe", "advanced", "malignant", "positive"]) else
+        "moderate" if any(key in value for key in ["moderate", "medium", "stage_ii", "stage_2"]) else
+        "low" if any(key in value for key in ["low", "mild", "benign", "negative", "normal"]) else
+        "moderate"
+    )
+    risk_score = risk_level.map({"low": 0.2, "moderate": 0.55, "high": 0.85})
+    return risk_level, risk_score
+
+
+def generate_default_series(name: str, n: int) -> pd.Series:
+    rng = np.random.default_rng(42)
+    if name == "age":
+        return pd.Series(rng.integers(20, 90, n))
+    if name == "tumor_size_mm":
+        return pd.Series(rng.uniform(5, 100, n))
+    if name == "bmi":
+        return pd.Series(rng.uniform(18, 40, n))
+    if name in {"family_history", "smoking_history", "diabetes", "inflammatory_bowel_disease", "genetic_mutation", "screening_history"}:
+        probs = {
+            "family_history": 0.3,
+            "smoking_history": 0.4,
+            "diabetes": 0.2,
+            "inflammatory_bowel_disease": 0.1,
+            "genetic_mutation": 0.15,
+            "screening_history": 0.6,
+        }
+        return pd.Series(rng.random(n) < probs.get(name, 0.3))
+    if name in {"alcohol_consumption", "diet_risk", "physical_activity"}:
+        choices = ["low", "medium", "high"]
+        return pd.Series(rng.choice(choices, n, p=[0.4, 0.4, 0.2]))
+    if name == "gender":
+        return pd.Series(rng.choice(["male", "female"], n))
+    return pd.Series([np.nan] * n)
+
+
+def load_real_clinical_data() -> pd.DataFrame | None:
+    csv_path = find_best_csv('data/clinical')
+    if csv_path is None:
+        print("No clinical CSV files found in data/clinical.")
+        return None
+
+    print(f"Loading clinical dataset from {csv_path}")
+    raw_df = pd.read_csv(csv_path)
+    if raw_df.empty:
+        print("Clinical dataset is empty.")
+        return None
+
+    normalized_cols = {normalize_column_name(col): col for col in raw_df.columns}
+
+    def resolve(aliases: list[str]) -> str | None:
+        for alias in aliases:
+            candidate = normalize_column_name(alias)
+            if candidate in normalized_cols:
+                return normalized_cols[candidate]
+        return None
+
+    feature_aliases = {
+        "age": ["age", "patient_age", "age_years"],
+        "gender": ["gender", "sex"],
+        "tumor_size_mm": ["tumor_size_mm", "tumor_size", "tumor_size_cm", "tumor_size_(mm)", "tumor_size_mm"],
+        "bmi": ["bmi", "body_mass_index"],
+        "family_history": ["family_history", "family_history_of_cancer", "family_history_colorectal_cancer"],
+        "smoking_history": ["smoking_history", "smoking", "smoker", "smoking_status"],
+        "alcohol_consumption": ["alcohol_consumption", "alcohol", "alcohol_use", "alcohol_intake"],
+        "diet_risk": ["diet_risk", "diet", "diet_quality"],
+        "physical_activity": ["physical_activity", "activity_level", "exercise"],
+        "diabetes": ["diabetes", "has_diabetes"],
+        "inflammatory_bowel_disease": ["inflammatory_bowel_disease", "ibd", "ulcerative_colitis"],
+        "genetic_mutation": ["genetic_mutation", "genetic", "hereditary"],
+        "screening_history": ["screening_history", "screening", "colonoscopy_history"],
+    }
+
+    n_rows = len(raw_df)
+    processed = pd.DataFrame()
+
+    for feature, aliases in feature_aliases.items():
+        column = resolve(aliases)
+        if column is None:
+            processed[feature] = generate_default_series(feature, n_rows)
+            continue
+        series = raw_df[column]
+        if feature == "gender":
+            processed[feature] = coerce_gender(series)
+        elif feature in {"family_history", "smoking_history", "diabetes", "inflammatory_bowel_disease", "genetic_mutation", "screening_history"}:
+            processed[feature] = coerce_boolean(series)
+        elif feature in {"alcohol_consumption", "diet_risk", "physical_activity"}:
+            processed[feature] = coerce_level(series)
+        else:
+            processed[feature] = pd.to_numeric(series, errors="coerce").fillna(generate_default_series(feature, n_rows).median())
+
+    target_column = resolve([
+        "risk_level",
+        "risk",
+        "risk_score",
+        "risk_prediction",
+        "prediction",
+        "target",
+        "label",
+        "outcome",
+        "diagnosis",
+        "cancer",
+        "cancer_status",
+        "result",
+    ])
+
+    if target_column:
+        risk_level, risk_score = derive_risk_from_target(raw_df[target_column])
+    else:
+        risk_score = (
+            processed['age'] * 0.02 +
+            processed['tumor_size_mm'] * 0.05 +
+            processed['bmi'] * 0.03 +
+            processed['family_history'].astype(int) * 15 +
+            processed['smoking_history'].astype(int) * 12 +
+            processed['genetic_mutation'].astype(int) * 20 +
+            processed['alcohol_consumption'].map({'low': 0, 'medium': 5, 'high': 10}) +
+            processed['diet_risk'].map({'low': 0, 'medium': 5, 'high': 10}) +
+            (1 - processed['physical_activity'].map({'low': 0, 'medium': 0.5, 'high': 1})) * 8 +
+            processed['diabetes'].astype(int) * 10 +
+            processed['inflammatory_bowel_disease'].astype(int) * 15 +
+            (1 - processed['screening_history'].astype(int)) * 5
+        )
+        risk_score = (risk_score - risk_score.min()) / (risk_score.max() - risk_score.min() + 1e-9)
+        risk_level = np.where(risk_score > 0.7, 'high', np.where(risk_score > 0.4, 'moderate', 'low'))
+
+    processed['risk_level'] = risk_level
+    processed['risk_score'] = risk_score
+
+    return processed
+
 def train_clinical_model_high_accuracy(X_train, y_train, X_test, y_test):
     """Train high-accuracy clinical model using ensemble methods"""
     print("\n" + "=" * 80)
@@ -254,16 +448,54 @@ def train_clinical_model_high_accuracy(X_train, y_train, X_test, y_test):
     
     return pipeline, final_accuracy, best_name
 
+def infer_image_label(image_path: Path) -> str | None:
+    benign_labels = {
+        "normal",
+        "normal-cecum",
+        "normal-pylorus",
+        "normal-z-line",
+        "healthy",
+        "benign",
+    }
+    malignant_labels = {
+        "dyed-lifted-polyps",
+        "dyed-resection-margins",
+        "esophagitis",
+        "polyps",
+        "ulcerative-colitis",
+        "cancer",
+        "malignant",
+        "adenocarcinoma",
+        "lesion",
+        "polyp",
+    }
+
+    parts = [part.lower().replace("_", "-") for part in image_path.parts]
+    for part in parts:
+        if part in benign_labels:
+            return "benign"
+        if part in malignant_labels:
+            return "malignant"
+
+    for part in parts:
+        if any(key in part for key in ["normal", "benign", "healthy"]):
+            return "benign"
+        if any(key in part for key in ["polyp", "ulcer", "cancer", "malignant", "lesion", "colitis", "esophagitis"]):
+            return "malignant"
+
+    return None
+
+
 def prepare_image_dataset():
     """Prepare image dataset for training"""
     print("\n" + "=" * 80)
     print("STEP 4: PREPARING IMAGE DATASET")
     print("=" * 80)
     
-    from PIL import Image
     import cv2
     
     image_dir = Path('data/images')
+    max_images = int(os.getenv("MAX_IMAGE_SAMPLES", "8000"))
     
     found_images = list(image_dir.rglob('*.jpg')) + list(image_dir.rglob('*.png')) + list(image_dir.rglob('*.jpeg'))
     
@@ -276,20 +508,24 @@ def prepare_image_dataset():
     image_data = []
     labels = []
     
-    for img_path in found_images[:2000]:
+    for img_path in found_images:
+        if len(image_data) >= max_images:
+            break
         try:
-            label = 'benign' if 'benign' in str(img_path).lower() or 'normal' in str(img_path).lower() else 'malignant'
+            label = infer_image_label(img_path)
+            if label is None:
+                continue
             
             img = cv2.imread(str(img_path))
             if img is not None:
                 img_resized = cv2.resize(img, (224, 224))
                 image_data.append(img_resized)
                 labels.append(label)
-        except Exception as e:
+        except Exception:
             continue
     
-    if len(image_data) == 0:
-        print("Could not load real images. Creating synthetic dataset...")
+    if len(image_data) < 100:
+        print("Could not load enough real images. Creating synthetic dataset...")
         return create_synthetic_image_data()
     
     print(f"✓ Prepared {len(image_data)} images for training")
@@ -500,7 +736,10 @@ def main():
     image_downloaded = download_image_dataset()
     
     print("\nLoading and preparing clinical data...")
-    clinical_df = create_synthetic_clinical_data()
+    clinical_df = load_real_clinical_data()
+    if clinical_df is None:
+        print("Falling back to synthetic clinical data...")
+        clinical_df = create_synthetic_clinical_data()
     clinical_df.to_csv('data/clinical_dataset.csv', index=False)
     print(f"✓ Clinical dataset: {clinical_df.shape[0]} samples")
     

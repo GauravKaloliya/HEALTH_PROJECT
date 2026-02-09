@@ -141,6 +141,15 @@ def preprocess_image_for_cnn(file_storage) -> np.ndarray:
         print(f"Error preprocessing image: {e}")
         return None
 
+def normalize_image_label(label: str) -> str:
+    label_text = str(label).lower()
+    if any(key in label_text for key in ["benign", "normal", "healthy"]):
+        return "benign"
+    if any(key in label_text for key in ["malignant", "polyp", "ulcer", "cancer", "lesion", "colitis", "esophagitis"]):
+        return "malignant"
+    return label
+
+
 def predict_image_with_model(file_storage) -> Dict[str, Any]:
     """Predict image classification using the trained CNN model"""
     if image_model is None or image_label_encoder is None:
@@ -164,6 +173,7 @@ def predict_image_with_model(file_storage) -> Dict[str, Any]:
             confidence = float(predictions[0][predicted_class])
         
         label = image_label_encoder.inverse_transform([predicted_class])[0]
+        label = normalize_image_label(label)
         
         return {
             "label": label,
