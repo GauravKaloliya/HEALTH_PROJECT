@@ -101,7 +101,8 @@ label {
 }
 
 input[type="number"],
-input[type="file"] {
+input[type="file"],
+select {
   padding: 10px 12px;
   border: 1px solid #dbe0ea;
   border-radius: 10px;
@@ -121,6 +122,34 @@ input[type="file"] {
 .button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Form sections and layout */
+.form-section {
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  border: 1px solid #e2e8f0;
+}
+
+.form-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a2232;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #4f6ef7;
+}
+
+.form-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.form-section select {
+  width: 100%;
 }
 
 .muted {
@@ -259,5 +288,13 @@ input[type="file"] {
 
   .card {
     padding: 20px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .form-section {
+    padding: 16px;
   }
 }
