@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Assessment Form Test</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: "Inter", "Segoe UI", sans-serif;
+        }
+        body {
+            background: #f4f7fb;
+            color: #1a2232;
+            padding: 20px;
+        }
+        .app {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .card {
+            background: #fff;
+            padding: 28px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .form {
+            display: grid;
+            gap: 16px;
+        }
+        .form-section {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+        }
+        .form-section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a2232;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #4f6ef7;
+        }
+        .form-row {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        }
+        label {
+            display: grid;
+            gap: 6px;
+            font-weight: 600;
+        }
+        input, select {
+            padding: 10px 12px;
+            border: 1px solid #dbe0ea;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+        .error {
+            color: #ef4444;
+            font-size: 12px;
+        }
+        .button {
+            background: #4f6ef7;
+            color: #fff;
+            border: none;
+            padding: 12px 18px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 16px;
+        }
+        .button:hover {
+            background: #3b5bdb;
+        }
+        .results {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        .muted {
+            color: #64748b;
+            font-size: 14px;
+        }
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            .form-section {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <div class="card">
+            <h2>Clinical Data</h2>
+            <p class="muted">
+                Provide comprehensive patient clinical data to generate an accurate risk profile.
+            </p>
+
+            <form class="form" id="clinicalForm">
+                <div class="form-section">
+                    <h3 class="form-section-title">Basic Demographics</h3>
+                    <div class="form-row">
+                        <label>
+                            Age
+                            <input type="number" name="age" min="0" max="120" required>
+                        </label>
+                        <label>
+                            Gender
+                            <select name="gender" required>
+                                <option value="">Select gender</option>
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">Clinical Measurements</h3>
+                    <div class="form-row">
+                        <label>
+                            Tumor Size (mm)
+                            <input type="number" name="tumor_size_mm" min="0" max="200" required>
+                        </label>
+                        <label>
+                            BMI
+                            <input type="number" name="bmi" min="10" max="60" step="0.1" required>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">Family & Medical History</h3>
+                    <div class="form-row">
+                        <label>
+                            Family History of Cancer
+                            <select name="family_history" required>
+                                <option value="">Select</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Genetic Mutation
+                            <select name="genetic_mutation" required>
+                                <option value="">Select</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Screening History
+                            <select name="screening_history" required>
+                                <option value="">Select</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">Lifestyle Factors</h3>
+                    <div class="form-row">
+                        <label>
+                            Smoking History
+                            <select name="smoking_history" required>
+                                <option value="">Select</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            Alcohol Consumption
+                            <select name="alcohol_consumption" required>
+                                <option value="">Select</option>
+                                <option value="none">None</option>
+                                <option value="moderate">Moderate</option>
+                                <option value="high">High</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label>
+                            Diet Risk
+                            <select name="diet_risk" required>
+                                <option value="">Select</option>
+                                <option value="low">Low Risk</option>
+                                <option value="moderate">Moderate Risk</option>
+                                <option value="high">High Risk</option>
+                            </select>
+                        </label>
+                        <label>
+                            Physical Activity
+                            <select name="physical_activity" required>
+                                <option value="">Select</option>
+                                <option value="sedentary">Sedentary</option>
+                                <option value="light">Light Activity</option>
+                                <option value="moderate">Moderate Activity</option>
+                                <option value="vigorous">Vigorous Activity</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3 class="form-section-title">Health Conditions</h3>
+                    <div class="form-row">
+                        <label>
+                            Diabetes
+                            <select name="diabetes" required>
+                                <option value="">Select</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </label>
+                        <label>
+                            IBD (Inflammatory Bowel Disease)
+                            <select name="ibd" required>
+                                <option value="">Select</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="button">
+                    Generate Comprehensive Risk Score
+                </button>
+            </form>
+
+            <div id="results" class="results" style="display: none;">
+                <h3>Risk Assessment Results</h3>
+                <div id="resultsContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('clinicalForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Convert boolean strings to actual booleans
+            ['family_history', 'smoking_history', 'diabetes', 'ibd', 'genetic_mutation', 'screening_history'].forEach(field => {
+                data[field] = data[field] === 'true';
+            });
+            
+            // Convert numeric fields
+            data.age = Number(data.age);
+            data.tumor_size_mm = Number(data.tumor_size_mm);
+            data.bmi = Number(data.bmi);
+            
+            try {
+                const response = await fetch('http://localhost:5000/api/v1/predict-risk', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    const resultsDiv = document.getElementById('results');
+                    const resultsContent = document.getElementById('resultsContent');
+                    
+                    resultsContent.innerHTML = `
+                        <div style="display: grid; gap: 12px; margin-top: 12px;">
+                            <div><strong>Risk Score:</strong> ${result.data.risk_score}</div>
+                            <div><strong>Risk Level:</strong> ${result.data.risk_level}</div>
+                            <div><strong>Confidence:</strong> ${result.data.confidence}</div>
+                            <div><strong>Risk Factors Count:</strong> ${result.data.risk_factors_count}</div>
+                            <div style="margin-top: 12px;">
+                                <strong>Contributing Factors:</strong>
+                                <ul style="margin-top: 8px; padding-left: 20px;">
+                                    ${Object.entries(result.data.contributing_factors).map(([key, value]) => 
+                                        `<li>${key}: ${typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value}</li>`
+                                    ).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                    resultsDiv.style.display = 'block';
+                } else {
+                    alert('Validation errors: ' + JSON.stringify(result.errors, null, 2));
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred while processing the request.');
+            }
+        });
+    </script>
+</body>
+</html>

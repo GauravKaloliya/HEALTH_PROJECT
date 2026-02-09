@@ -21,7 +21,7 @@ app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 
-def validate_clinical_inputs(payload: Dict[str, Any]) -> Tuple[Dict[str, float], Dict[str, str]]:
+def validate_clinical_inputs(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, str]]:
     errors: Dict[str, str] = {}
 
     def get_float(field: str) -> float | None:
@@ -35,9 +35,46 @@ def validate_clinical_inputs(payload: Dict[str, Any]) -> Tuple[Dict[str, float],
             errors[field] = "Must be a number."
             return None
 
+    def get_bool(field: str) -> bool | None:
+        value = payload.get(field)
+        if value is None:
+            errors[field] = "This field is required."
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            if value.lower() in ("true", "1", "yes"):
+                return True
+            elif value.lower() in ("false", "0", "no"):
+                return False
+        errors[field] = "Must be true or false."
+        return None
+
+    def get_enum(field: str, allowed_values: list[str]) -> str | None:
+        value = payload.get(field)
+        if value is None:
+            errors[field] = "This field is required."
+            return None
+        if value not in allowed_values:
+            errors[field] = f"Must be one of: {', '.join(allowed_values)}."
+            return None
+        return value
+
     age = get_float("age")
     tumor_size = get_float("tumor_size_mm")
     bmi = get_float("bmi")
+    
+    # New clinical fields
+    gender = get_enum("gender", ["male", "female", "other"])
+    family_history = get_bool("family_history")
+    smoking_history = get_bool("smoking_history")
+    alcohol_consumption = get_enum("alcohol_consumption", ["none", "moderate", "high"])
+    diet_risk = get_enum("diet_risk", ["low", "moderate", "high"])
+    physical_activity = get_enum("physical_activity", ["sedentary", "light", "moderate", "vigorous"])
+    diabetes = get_bool("diabetes")
+    ibd = get_bool("ibd")
+    genetic_mutation = get_bool("genetic_mutation")
+    screening_history = get_bool("screening_history")
 
     if age is not None and not 0 <= age <= 120:
         errors["age"] = "Age must be between 0 and 120."
@@ -50,29 +87,106 @@ def validate_clinical_inputs(payload: Dict[str, Any]) -> Tuple[Dict[str, float],
         "age": age,
         "tumor_size_mm": tumor_size,
         "bmi": bmi,
+        "gender": gender,
+        "family_history": family_history,
+        "smoking_history": smoking_history,
+        "alcohol_consumption": alcohol_consumption,
+        "diet_risk": diet_risk,
+        "physical_activity": physical_activity,
+        "diabetes": diabetes,
+        "ibd": ibd,
+        "genetic_mutation": genetic_mutation,
+        "screening_history": screening_history,
     }
     return cleaned, errors
 
 
-def preprocess_features(inputs: Dict[str, float]) -> Dict[str, float]:
-    return {
-        "age": inputs["age"] / 120,
-        "tumor_size_mm": inputs["tumor_size_mm"] / 200,
-        "bmi": inputs["bmi"] / 60,
-    }
+def preprocess_features(inputs: Dict[str, Any]) -> Dict[str, float]:
+    features = {}
+    
+    # Numerical features (normalized)
+    features["age"] = inputs["age"] / 120
+    features["tumor_size_mm"] = inputs["tumor_size_mm"] / 200
+    features["bmi"] = inputs["bmi"] / 60
+    
+    # Categorical features (one-hot encoded)
+    # Gender encoding
+    features["gender_male"] = 1 if inputs["gender"] == "male" else 0
+    features["gender_female"] = 1 if inputs["gender"] == "female" else 0
+    features["gender_other"] = 1 if inputs["gender"] == "other" else 0
+    
+    # Boolean features (as 0/1)
+    features["family_history"] = 1 if inputs["family_history"] else 0
+    features["smoking_history"] = 1 if inputs["smoking_history"] else 0
+    features["diabetes"] = 1 if inputs["diabetes"] else 0
+    features["ibd"] = 1 if inputs["ibd"] else 0
+    features["genetic_mutation"] = 1 if inputs["genetic_mutation"] else 0
+    features["screening_history"] = 1 if inputs["screening_history"] else 0
+    
+    # Ordinal categorical features (encoded as ordinal values)
+    # Alcohol consumption: none=0, moderate=0.5, high=1
+    alcohol_map = {"none": 0, "moderate": 0.5, "high": 1}
+    features["alcohol_consumption"] = alcohol_map[inputs["alcohol_consumption"]]
+    
+    # Diet risk: low=0, moderate=0.5, high=1
+    diet_map = {"low": 0, "moderate": 0.5, "high": 1}
+    features["diet_risk"] = diet_map[inputs["diet_risk"]]
+    
+    # Physical activity: sedentary=0, light=0.33, moderate=0.67, vigorous=1
+    activity_map = {"sedentary": 0, "light": 0.33, "moderate": 0.67, "vigorous": 1}
+    features["physical_activity"] = activity_map[inputs["physical_activity"]]
+    
+    return features
 
 
 def mock_risk_model(features: Dict[str, float]) -> Dict[str, Any]:
+    # Calculate risk score using weighted factors
+    # Base numerical factors
     score = (
-        features["age"] * 0.35
-        + features["tumor_size_mm"] * 0.45
-        + features["bmi"] * 0.2
+        features["age"] * 0.15  # Age is significant but reduced weight for new factors
+        + features["tumor_size_mm"] * 0.25  # Tumor size is still important
+        + features["bmi"] * 0.1  # BMI weight reduced
+        # Gender factors
+        + features["gender_male"] * 0.05  # Slightly higher risk for males
+        + features["gender_female"] * 0.02  # Lower baseline risk for females
+        # Lifestyle risk factors
+        + features["family_history"] * 0.15  # Strong genetic factor
+        + features["smoking_history"] * 0.1  # Smoking is a significant risk
+        + features["alcohol_consumption"] * 0.08  # Alcohol consumption risk
+        + features["diet_risk"] * 0.07  # Poor diet increases risk
+        # Health conditions
+        + features["diabetes"] * 0.08  # Diabetes increases risk
+        + features["ibd"] * 0.05  # IBD has moderate risk association
+        + features["genetic_mutation"] * 0.12  # Genetic factors are significant
+        # Protective factors
+        - features["physical_activity"] * 0.06  # Physical activity is protective
+        + features["screening_history"] * 0.03  # Regular screening slightly increases detection
     )
+    
+    # Ensure score is within valid range
     score = min(max(score, 0.0), 1.0)
-    confidence = 0.7 + (0.3 * (1 - math.fabs(score - 0.5) * 2))
-    if score >= 0.7:
+    
+    # Calculate confidence based on number of risk factors present
+    risk_factors_count = sum([
+        features["family_history"],
+        features["smoking_history"],
+        features["diabetes"],
+        features["genetic_mutation"],
+        features["diet_risk"],
+        features["alcohol_consumption"],
+        1 if features["tumor_size_mm"] > 0.5 else 0,  # Large tumor
+        1 if features["age"] > 0.6 else 0,  # Older age
+        1 if features["bmi"] > 0.7 else 0,  # High BMI
+    ])
+    
+    # Base confidence increases with more comprehensive data
+    confidence = 0.75 + (0.2 * min(risk_factors_count / 8, 1))
+    confidence = min(confidence, 0.95)  # Cap at 95%
+    
+    # Adjust risk levels based on comprehensive scoring
+    if score >= 0.65:
         level = "high"
-    elif score >= 0.4:
+    elif score >= 0.35:
         level = "moderate"
     else:
         level = "low"
@@ -81,6 +195,16 @@ def mock_risk_model(features: Dict[str, float]) -> Dict[str, Any]:
         "risk_score": round(score, 3),
         "risk_level": level,
         "confidence": round(confidence, 3),
+        "risk_factors_count": risk_factors_count,
+        "contributing_factors": {
+            "age": round(features["age"], 3),
+            "tumor_size": round(features["tumor_size_mm"], 3),
+            "bmi": round(features["bmi"], 3),
+            "family_history": bool(features["family_history"]),
+            "smoking_history": bool(features["smoking_history"]),
+            "genetic_mutation": bool(features["genetic_mutation"]),
+            "diabetes": bool(features["diabetes"]),
+        }
     }
 
 
