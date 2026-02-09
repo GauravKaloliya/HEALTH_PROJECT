@@ -5,7 +5,7 @@ import math
 import os
 from typing import Any, Dict, Tuple
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template_string, request
 from flask_cors import CORS
 
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
@@ -19,6 +19,197 @@ logger = logging.getLogger("health_api")
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+API_NAME = "Health Risk Assessment API"
+API_VERSION = "v1"
+
+LANDING_PAGE_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ api_name }} | Overview</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --primary: #1f4b99;
+            --accent: #0f766e;
+            --text: #0f172a;
+            --muted: #64748b;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --border: #e2e8f0;
+        }
+        * {
+            box-sizing: border-box;
+            font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+        }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 32px 20px 40px;
+        }
+        header {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        h1 {
+            font-size: 2.2rem;
+            margin: 0;
+        }
+        .subtitle {
+            color: var(--muted);
+            font-size: 1.05rem;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 4px;
+        }
+        .badge {
+            background: rgba(15, 118, 110, 0.15);
+            color: var(--accent);
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+            margin-bottom: 20px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+        }
+        .endpoint-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .endpoint-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+        }
+        .method {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            background: rgba(31, 75, 153, 0.15);
+            color: var(--primary);
+            min-width: 64px;
+            text-align: center;
+        }
+        .endpoint-details a {
+            display: inline-block;
+            font-weight: 600;
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .endpoint-details p {
+            margin: 6px 0 0;
+            color: var(--muted);
+        }
+        .meta strong {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .meta span {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        @media (max-width: 640px) {
+            .container {
+                padding: 24px 16px 32px;
+            }
+            h1 {
+                font-size: 1.8rem;
+            }
+            .endpoint-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>{{ api_name }}</h1>
+            <div class="subtitle">Clinical decision support endpoints for risk prediction and imaging classification.</div>
+            <div class="status">
+                <span class="badge">{{ status }}</span>
+                <span class="subtitle">Version {{ version }}</span>
+            </div>
+        </header>
+
+        <section class="card grid">
+            <div class="meta">
+                <strong>Base URL</strong>
+                <span>{{ base_url }}</span>
+            </div>
+            <div class="meta">
+                <strong>Response format</strong>
+                <span>JSON</span>
+            </div>
+            <div class="meta">
+                <strong>Authentication</strong>
+                <span>None (public)</span>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Available endpoints</h2>
+            <ul class="endpoint-list">
+                {% for endpoint in endpoints %}
+                <li>
+                    <div class="endpoint-row">
+                        <span class="method">{{ endpoint.method }}</span>
+                        <div class="endpoint-details">
+                            <a href="{{ endpoint.path }}">{{ endpoint.path }}</a>
+                            <p>{{ endpoint.description }}</p>
+                        </div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2>Operational guidance</h2>
+            <p class="subtitle">
+                Submit structured JSON payloads to the clinical endpoints or upload an image file to the
+                classification endpoint. Each response includes a status field and a data object with
+                the prediction outcome.
+            </p>
+        </section>
+    </div>
+</body>
+</html>
+"""
 
 # Valid enum values
 VALID_GENDERS = {"male", "female", "other"}
@@ -205,6 +396,35 @@ def mock_image_classifier(file_storage) -> Dict[str, Any]:
 
 def build_error_response(errors: Dict[str, str], status_code: int = 400):
     return jsonify({"status": "error", "errors": errors}), status_code
+
+
+@app.route("/", methods=["GET"])
+def landing_page():
+    endpoints = [
+        {
+            "method": "POST",
+            "path": "/api/v1/predict-risk",
+            "description": "Estimate clinical risk based on structured patient factors.",
+        },
+        {
+            "method": "POST",
+            "path": "/api/v1/classify-image",
+            "description": "Upload a diagnostic image for benign/malignant classification.",
+        },
+        {
+            "method": "POST",
+            "path": "/api/v1/final-assessment",
+            "description": "Combine clinical and imaging outputs into a final risk level.",
+        },
+    ]
+    return render_template_string(
+        LANDING_PAGE_TEMPLATE,
+        api_name=API_NAME,
+        version=API_VERSION,
+        status="Operational",
+        base_url=request.host_url.rstrip("/"),
+        endpoints=endpoints,
+    )
 
 
 @app.route("/api/v1/predict-risk", methods=["POST"])
